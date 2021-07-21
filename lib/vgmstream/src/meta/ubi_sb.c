@@ -2,6 +2,7 @@
 #include "../layout/layout.h"
 #include "../coding/coding.h"
 #include "ubi_sb_streamfile.h"
+#include <math.h>
 
 
 #define SB_MAX_LAYER_COUNT 16  /* arbitrary max */
