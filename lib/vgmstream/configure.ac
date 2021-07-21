@@ -35,6 +35,12 @@ PKG_CHECK_MODULES(MPG123, [libmpg123], have_libmpg123=yes,
 )
 AM_CONDITIONAL(HAVE_LIBMPG123, test "$have_libmpg123" = yes)
 
+have_ffmpeg=no
+#PKG_CHECK_MODULES(FFMPEG, [libavformat libavcodec libavutil libswresample], have_ffmpeg=yes,
+#        [AC_MSG_WARN([Cannot find ffmpeg - will not enable FFmpeg formats])]
+#)
+AM_CONDITIONAL(HAVE_FFMPEG, test "$have_ffmpeg" = yes)
+
 have_audacious=no
 PKG_CHECK_MODULES(AUDACIOUS, [audacious >= 3.5.0],  have_audacious=yes,
         [AC_MSG_WARN([Cannot find audacious >= 3.5.0 correctly installed - will not build Audacious plugin])]
@@ -50,11 +56,17 @@ PKG_CHECK_MODULES(AO, [ao >= 1.1.0], have_libao=yes,
         [AC_MSG_WARN([Cannot find libao - will not build vgmstream123])])
 AM_CONDITIONAL(HAVE_LIBAO, test "$have_libao" = yes)
 
+have_jansson=no
+PKG_CHECK_MODULES(JANSSON, [jansson >= 2.3], have_jansson=yes,
+        [AC_MSG_WARN([Cannot find jansson - will disable JSON dumping in CLI])])
+AM_CONDITIONAL(HAVE_JANSSON, test "$have_jansson" = yes)
+
 if test "_$GCC" = _yes
 then
   CFLAGS="$CFLAGS -Wall -Wextra -Wno-sign-compare -Wno-unused-parameter -Wno-unused-but-set-variable"
 fi
 
+#plugindir=`pkg-config audacious --define-variable=prefix="$prefix" --variable=plugin_dir`
 plugindir=`pkg-config audacious --variable=plugin_dir`
 AC_SUBST(plugindir)
 

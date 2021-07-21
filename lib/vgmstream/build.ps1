@@ -1,7 +1,7 @@
 [CmdletBinding()]
 Param(
     [Parameter(Position=0, mandatory=$true)]
-    [ValidateSet("Init", "Build", "Package")]
+    [ValidateSet("Init", "Build")]
     [string]$Task
 )
 
@@ -11,34 +11,6 @@ Param(
 $solution = "vgmstream_full.sln"
 $vswhere = "dependencies/vswhere.exe"
 $config = "/p:Configuration=Release"
-$onAppveyor = ($env:APPVEYOR -eq "true")
-$appveyorLoggerPath = "C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
-
-$fb2kFiles = @(
-    "ext_libs/*.dll",
-    "ext_libs/*.dll.asc",
-    "Release/foo_input_vgmstream.dll",
-    "README.md"
-)
-
-$cliFiles = @(
-    "ext_libs/*.dll",
-    "Release/in_vgmstream.dll",
-    "Release/test.exe",
-    "Release/xmp-vgmstream.dll",
-    "COPYING",
-    "README.md"
-)
-
-$fb2kPdbFiles = @(
-    "Release/foo_input_vgmstream.pdb"
-)
-
-$cliPdbFiles = @(
-    "Release/in_vgmstream.pdb",
-    "Release/test.pdb",
-    "Release/xmp-vgmstream.pdb"
-)
 
 function Unzip
 {
@@ -94,28 +66,8 @@ function Init
     $proj.Save("dependencies\foobar\foobar2000\ATLHelpers\foobar2000_ATL_helpers.vcxproj")
 }
 
-function Package
-{
-    Compress-Archive $cliFiles Release/test.zip -Force
-    Compress-Archive $fb2kFiles Release/foo_input_vgmstream.zip -Force
-    Move-Item Release/foo_input_vgmstream.zip Release/foo_input_vgmstream.fb2k-component -Force
-    Compress-Archive $cliPdbFiles Release/test.pdb.zip -Force
-    Compress-Archive $fb2kPdbFiles Release/foo_input_vgmstream.pdb.zip -Force
-}
-
 function Build
 {
-    $commit = & git describe --always
-    if($onAppveyor) {
-        if($env:APPVEYOR_PULL_REQUEST_NUMBER) {
-            $prCommits = & git rev-list "$env:APPVEYOR_REPO_BRANCH.." --count
-            $prNum = ".PR$env:APPVEYOR_PULL_REQUEST_NUMBER.$prCommits"
-        }
-        if($env:APPVEYOR_REPO_BRANCH -ne "master") { $branch = ".$env:APPVEYOR_REPO_BRANCH" }
-        $version = "$commit$prNum$branch"
-        Update-AppveyorBuild -Version $version -errorAction SilentlyContinue
-    }
-
     if(!(Test-Path $vswhere)) { Init }
 
     $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe
@@ -124,19 +76,11 @@ function Build
         Write-Error "Unable to find MSBuild. Is Visual Studio installed?"
     }
 
-    $logger = ""
-    if(Test-Path $appveyorLoggerPath) {
-        $logger = "/logger:$appveyorLoggerPath"
-    }
-
-    & $msbuild $solution $config $logger /m
-
-    Package
+    & $msbuild $solution $config /m
 }
 
 switch ($Task)
 {
     "Init" { Init }
     "Build" { Build }
-    "Package" { Package }
 }

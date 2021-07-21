@@ -47,6 +47,12 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="decode.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="render.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="mixing.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -146,6 +152,9 @@
     <ClInclude Include="meta\ppst_streamfile.h">
       <Filter>meta\Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="meta\ps2_enth_streamfile.h">
+      <Filter>meta\Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="meta\vsv_streamfile.h">
       <Filter>meta\Header Files</Filter>
     </ClInclude>
@@ -159,6 +168,9 @@
       <Filter>meta\Header Files</Filter>
     </ClInclude>
     <ClInclude Include="meta\riff_ogg_streamfile.h">
+      <Filter>meta\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="meta\sab_streamfile.h">
       <Filter>meta\Header Files</Filter>
     </ClInclude>
     <ClInclude Include="meta\sfh_streamfile.h">
@@ -236,7 +248,13 @@
     <ClInclude Include="..\ext_includes\clHCA.h">
       <Filter>ext_libs\Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="coding\mpeg_bitreader.h">
+      <Filter>coding\Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="coding\mpeg_decoder.h">
+      <Filter>coding\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="coding\vorbis_bitreader.h">
       <Filter>coding\Header Files</Filter>
     </ClInclude>
     <ClInclude Include="coding\vorbis_custom_data_fsb.h">
@@ -266,6 +284,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="formats.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="decode.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="render.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="mixing.c">
@@ -337,6 +361,9 @@
     <ClCompile Include="meta\acm.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="meta\adp_konami.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="meta\adpcm_capcom.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
@@ -391,10 +418,16 @@
     <ClCompile Include="meta\btsnd.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="meta\bsf.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="meta\capdsp.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\ck.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="meta\cpk.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\cri_utf.c">
@@ -434,6 +467,9 @@
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\dmsg_segh.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="meta\dsb.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\dsf.c">
@@ -700,9 +736,6 @@
     <ClCompile Include="meta\omu.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="meta\opus_ppp.c">
-      <Filter>meta\Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="meta\otm.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
@@ -871,10 +904,10 @@
     <ClCompile Include="meta\ps2_ster.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="meta\ps2_svag.c">
+    <ClCompile Include="meta\svag_kcet.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="meta\ps2_svag_snk.c">
+    <ClCompile Include="meta\svag_snk.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\ps2_tec.c">
@@ -1096,6 +1129,9 @@
     <ClCompile Include="meta\ubi_jade.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="meta\wady.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="meta\waf.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
@@ -1193,6 +1229,9 @@
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\zwdsp.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="meta\zwv.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="coding\acm_decoder.c">
@@ -1330,6 +1369,9 @@
     <ClCompile Include="coding\vadpcm_decoder.c">
       <Filter>coding\Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="coding\wady_decoder.c">
+      <Filter>coding\Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="coding\ws_decoder.c">
       <Filter>coding\Source Files</Filter>
     </ClCompile>
@@ -1390,7 +1432,7 @@
     <ClCompile Include="layout\blocked_vs_square.c">
       <Filter>layout\Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="layout\blocked_vawx.c">
+    <ClCompile Include="layout\blocked_xwav.c">
       <Filter>layout\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="layout\blocked_xvag.c">
@@ -1486,6 +1528,9 @@
     <ClCompile Include="meta\sgxd.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="meta\silence.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="meta\ngca.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
@@ -1528,7 +1573,7 @@
     <ClCompile Include="meta\lsf.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="meta\vawx.c">
+    <ClCompile Include="meta\xwav.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\raw_snds.c">
@@ -1708,6 +1753,9 @@
     <ClCompile Include="meta\xps.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="meta\xse.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="meta\x360_cxs.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
@@ -1745,6 +1793,9 @@
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\mogg.c">
+      <Filter>meta\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="meta\ktsc.c">
       <Filter>meta\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meta\ktsr.c">

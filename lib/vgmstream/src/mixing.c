@@ -56,6 +56,7 @@
 typedef enum {
     MIX_SWAP,
     MIX_ADD,
+    MIX_ADD_COPY,
     MIX_VOLUME,
     MIX_LIMIT,
     MIX_UPMIX,
@@ -89,28 +90,41 @@ typedef struct {
     size_t mixing_size;     /* mixing max */
     mix_command_data mixing_chain[VGMSTREAM_MAX_MIXING]; /* effects to apply (could be alloc'ed but to simplify...) */
     float* mixbuf;          /* internal mixing buffer */
+
+    /* fades only apply at some points, other mixes are active */
+    int has_non_fade;
+    int has_fade;
 } mixing_data;
 
 
 /* ******************************************************************* */
 
-static int is_active(mixing_data *data, int32_t current_start, int32_t current_end) {
+static int is_fade_active(mixing_data *data, int32_t current_start, int32_t current_end) {
     int i;
-    int32_t fade_start, fade_end;
 
     for (i = 0; i < data->mixing_count; i++) {
         mix_command_data *mix = &data->mixing_chain[i];
+        int32_t fade_start, fade_end;
+        float vol_start = mix->vol_start;
 
         if (mix->command != MIX_FADE)
-            return 1; /* has non-fades = active */
+            continue;
 
         /* check is current range falls within a fade
          * (assuming fades were already optimized on add) */
-        fade_start = mix->time_pre < 0 ? 0 : mix->time_pre;
+        if (mix->time_pre < 0 && vol_start == 1.0) {
+            fade_start = mix->time_start; /* ignore unused */
+        }
+        else {
+            fade_start = mix->time_pre < 0 ? 0 : mix->time_pre;
+        }
         fade_end = mix->time_post < 0 ? INT_MAX : mix->time_post;
-
-        if (current_start < fade_end && current_end > fade_start)
+        
+        //;VGM_LOG("MIX: fade test, tp=%i, te=%i, cs=%i, ce=%i\n", mix->time_pre, mix->time_post, current_start, current_end);
+        if (current_start < fade_end && current_end > fade_start) {
+            //;VGM_LOG("MIX: fade active, cs=%i < fe=%i and ce=%i > fs=%i\n", current_start, fade_end, current_end, fade_start);
             return 1;
+        }
     }
 
     return 0;
@@ -118,6 +132,10 @@ static int is_active(mixing_data *data, int32_t current_start, int32_t current_e
 
 static int32_t get_current_pos(VGMSTREAM* vgmstream, int32_t sample_count) {
     int32_t current_pos;
+
+    if (vgmstream->config_enabled) {
+        return vgmstream->pstate.play_position;
+    }
 
     if (vgmstream->loop_flag && vgmstream->loop_count > 0) {
         int loop_pre = vgmstream->loop_start_sample; /* samples before looping */
@@ -245,7 +263,7 @@ void mix_vgmstream(sample_t *outbuf, int32_t sample_count, VGMSTREAM* vgmstream)
     mixing_data *data = vgmstream->mixing_data;
     int ch, s, m, ok;
 
-    int32_t current_pos, current_subpos;
+    int32_t current_subpos = 0;
     float temp_f, temp_min, temp_max, cur_vol = 0.0f;
     float *temp_mixbuf;
     sample_t *temp_outbuf;
@@ -257,17 +275,20 @@ void mix_vgmstream(sample_t *outbuf, int32_t sample_count, VGMSTREAM* vgmstream)
     if (!data || !data->mixing_on || data->mixing_count == 0)
         return;
 
-    /* try to skip if no ops apply (for example if fade set but does nothing yet) */
-    current_pos = get_current_pos(vgmstream, sample_count);
-    if (!is_active(data, current_pos, current_pos + sample_count))
-        return;
+    /* try to skip if no fades apply (set but does nothing yet) + only has fades */
+    if (data->has_fade) {
+        int32_t current_pos = get_current_pos(vgmstream, sample_count);
+        //;VGM_LOG("MIX: fade test %i, %i\n", data->has_non_fade, is_fade_active(data, current_pos, current_pos + sample_count));
+        if (!data->has_non_fade && !is_fade_active(data, current_pos, current_pos + sample_count))
+            return;
+        //;VGM_LOG("MIX: fade pos=%i\n", current_pos);
+        current_subpos = current_pos;
+    }
 
 
     /* use advancing buffer pointers to simplify logic */
     temp_mixbuf = data->mixbuf;
     temp_outbuf = outbuf;
-
-    current_subpos = current_pos;
 
     /* apply mixes in order per channel */
     for (s = 0; s < sample_count; s++) {
@@ -301,6 +322,10 @@ void mix_vgmstream(sample_t *outbuf, int32_t sample_count, VGMSTREAM* vgmstream)
 
                 case MIX_ADD:
                     stpbuf[mix->ch_dst] = stpbuf[mix->ch_dst] + stpbuf[mix->ch_src] * mix->vol;
+                    break;
+
+                case MIX_ADD_COPY:
+                    stpbuf[mix->ch_dst] = stpbuf[mix->ch_dst] + stpbuf[mix->ch_src];
                     break;
 
                 case MIX_VOLUME:
@@ -380,7 +405,8 @@ void mix_vgmstream(sample_t *outbuf, int32_t sample_count, VGMSTREAM* vgmstream)
         temp_outbuf += vgmstream->channels;
     }
 
-    /* copy resulting mix to output */
+    /* copy resulting mix to output
+     * (you'd think using a int32 temp buf would be faster but somehow it's slower?) */
     for (s = 0; s < sample_count * data->output_channels; s++) {
         /* when casting float to int, value is simply truncated:
          * - (int)1.7 = 1, (int)-1.7 = -1
@@ -453,6 +479,14 @@ static int add_mixing(VGMSTREAM* vgmstream, mix_command_data *mix) {
     data->mixing_chain[data->mixing_count] = *mix; /* memcpy */
     data->mixing_count++;
 
+
+    if (mix->command == MIX_FADE) {
+        data->has_fade = 1;
+    }
+    else {
+        data->has_non_fade = 1;
+    }
+
     //;VGM_LOG("MIX: total %i\n", data->mixing_count);
     return 1;
 }
@@ -481,7 +515,7 @@ void mixing_push_add(VGMSTREAM* vgmstream, int ch_dst, int ch_src, double volume
     if (ch_dst < 0 || ch_src < 0) return;
     if (!data || ch_dst >= data->output_channels || ch_src >= data->output_channels) return;
 
-    mix.command = MIX_ADD; //if (volume == 1.0) MIX_ADD_COPY /* could simplify */
+    mix.command = (volume == 1.0) ?  MIX_ADD_COPY : MIX_ADD;
     mix.ch_dst = ch_dst;
     mix.ch_src = ch_src;
     mix.vol = volume;
@@ -675,6 +709,10 @@ void mixing_push_fade(VGMSTREAM* vgmstream, int ch_dst, double vol_start, double
 
 /* ******************************************************************* */
 
+#define MIX_MACRO_VOCALS  'v'
+#define MIX_MACRO_EQUAL   'e'
+#define MIX_MACRO_BGM     'b'
+
 void mixing_macro_volume(VGMSTREAM* vgmstream, double volume, uint32_t mask) {
     mixing_data *data = vgmstream->mixing_data;
     int ch;
@@ -713,12 +751,194 @@ void mixing_macro_track(VGMSTREAM* vgmstream, uint32_t mask) {
     }
 }
 
+
+/* get highest channel count */
+static int get_layered_max_channels(VGMSTREAM* vgmstream) {
+    int i, max;
+    layered_layout_data* data;
+
+    if (vgmstream->layout_type != layout_layered)
+        return 0;
+
+    data = vgmstream->layout_data;
+
+    max = 0;
+    for (i = 0; i < data->layer_count; i++) {
+        int output_channels = 0;
+
+        mixing_info(data->layers[i], NULL, &output_channels);
+
+        if (max < output_channels)
+            max = output_channels;
+    }
+
+    return max;
+}
+
+static int is_layered_auto(VGMSTREAM* vgmstream, int max, char mode) {
+    int i;
+    mixing_data *data = vgmstream->mixing_data;
+    layered_layout_data* l_data;
+
+
+    if (vgmstream->layout_type != layout_layered)
+        return 0;
+
+    /* no channels set and only vocals for now */
+    if (max > 0 || mode != MIX_MACRO_VOCALS)
+        return 0;
+
+    /* no channel down/upmixing (cannot guess output) */
+    for (i = 0; i < data->mixing_count; i++) {
+        mix_command_t mix = data->mixing_chain[i].command;
+        if (mix == MIX_UPMIX || mix == MIX_DOWNMIX || mix == MIX_KILLMIX) /*mix == MIX_SWAP || ??? */
+            return 0;
+    }
+
+    /* only previsible cases */
+    l_data = vgmstream->layout_data;
+    for (i = 0; i < l_data->layer_count; i++) {
+        int output_channels = 0;
+
+        mixing_info(l_data->layers[i], NULL, &output_channels);
+
+        if (output_channels > 8)
+            return 0;
+    }
+
+    return 1;
+}
+
+
+/* special layering, where channels are respected (so Ls only go to Ls), also more optimized */
+static void mixing_macro_layer_auto(VGMSTREAM* vgmstream, int max, char mode) {
+    layered_layout_data* ldata = vgmstream->layout_data;
+    int i, ch;
+    int target_layer = 0, target_chs = 0, ch_max, target_ch = 0, target_silence = 0;
+    int ch_num;
+
+    /* With N layers like: (ch1 ch2) (ch1 ch2 ch3 ch4) (ch1 ch2), output is normally 2+4+2=8ch.
+     * We want to find highest layer (ch1..4) = 4ch, add other channels to it and drop them */
+
+    /* find target "main" channels (will be first most of the time) */
+    ch_num = 0;
+    ch_max = 0;
+    for (i = 0; i < ldata->layer_count; i++) {
+        int layer_chs = 0;
+
+        mixing_info(ldata->layers[i], NULL, &layer_chs);
+
+        if (ch_max < layer_chs || (ch_max == layer_chs && target_silence)) {
+            target_ch = ch_num;
+            target_chs = layer_chs;
+            target_layer = i;
+            ch_max = layer_chs;
+            /* avoid using silence as main if possible for minor optimization */
+            target_silence = (ldata->layers[i]->coding_type == coding_SILENCE);
+        }
+
+        ch_num += layer_chs;
+    }
+
+    /* all silences? */
+    if (!target_chs) {
+        target_ch = 0;
+        target_chs = 0;
+        target_layer = 0;
+        mixing_info(ldata->layers[0], NULL, &target_chs);
+    }
+
+    /* add other channels to target (assumes standard channel mapping to simplify)
+     * most of the time all layers will have same number of channels though */
+    ch_num = 0;
+    for (i = 0; i < ldata->layer_count; i++) {
+        int layer_chs = 0;
+
+        if (target_layer == i) {
+            ch_num += target_chs;
+            continue;
+        }
+        
+        mixing_info(ldata->layers[i], NULL, &layer_chs);
+
+        if (ldata->layers[i]->coding_type == coding_SILENCE) {
+            ch_num += layer_chs;
+            continue; /* unlikely but sometimes in Wwise */
+        }
+
+        if (layer_chs == target_chs) {
+            /* 1:1 mapping */
+            for (ch = 0; ch < layer_chs; ch++) {
+                mixing_push_add(vgmstream, target_ch + ch, ch_num + ch, 1.0);
+            }
+        }
+        else {
+            const double vol_sqrt = 1 / sqrt(2);
+
+            /* extra mixing for better sound in some cases (assumes layer_chs is lower than target_chs) */
+            switch(layer_chs) {
+                case 1:
+                    mixing_push_add(vgmstream, target_ch + 0, ch_num + 0, vol_sqrt);
+                    mixing_push_add(vgmstream, target_ch + 1, ch_num + 0, vol_sqrt);
+                    break;
+                case 2:
+                    mixing_push_add(vgmstream, target_ch + 0, ch_num + 0, 1.0);
+                    mixing_push_add(vgmstream, target_ch + 1, ch_num + 1, 1.0);
+                    break;
+                default: /* less common */
+                    //TODO add other mixes, depends on target_chs + mapping (ex. 4.0 to 5.0 != 5.1, 2.1 xiph to 5.1 != 5.1 xiph)
+                    for (ch = 0; ch < layer_chs; ch++) {
+                        mixing_push_add(vgmstream, target_ch + ch, ch_num + ch, 1.0);
+                    }
+                    break;
+            }
+        }
+
+        ch_num += layer_chs;
+    }
+
+    /* drop non-target channels */
+    ch_num = 0;
+    for (i = 0; i < ldata->layer_count; i++) {
+        
+        if (i < target_layer) { /* least common, hopefully (slower to drop chs 1 by 1) */
+            int layer_chs = 0;
+            mixing_info(ldata->layers[i], NULL, &layer_chs);
+
+            for (ch = 0; ch < layer_chs; ch++) {
+                mixing_push_downmix(vgmstream, ch_num); //+ ch
+            }
+
+            //ch_num += layer_chs; /* dropped channels change this */
+        }
+        else if (i == target_layer) {
+            ch_num += target_chs;
+        }
+        else { /* most common, hopefully (faster) */
+            mixing_push_killmix(vgmstream, ch_num);
+            break;
+        }
+    }
+}
+
+
 void mixing_macro_layer(VGMSTREAM* vgmstream, int max, uint32_t mask, char mode) {
     mixing_data *data = vgmstream->mixing_data;
     int current, ch, output_channels, selected_channels;
 
     if (!data)
         return;
+
+    if (is_layered_auto(vgmstream, max, mode)) {
+        //;VGM_LOG("MIX: auto layer mode\n");
+        mixing_macro_layer_auto(vgmstream, max, mode);
+        return;
+    }
+    //;VGM_LOG("MIX: regular layer mode\n");
+
+    if (max == 0) /* auto calculate */
+        max = get_layered_max_channels(vgmstream);
+
     if (max <= 0 || data->output_channels <= max)
         return;
 
@@ -749,10 +969,10 @@ void mixing_macro_layer(VGMSTREAM* vgmstream, int max, uint32_t mask, char mode)
         if (!((mask >> ch) & 1))
             continue;
 
-        /* mode 'v': same volume for all layers (for layered vocals) */
-        /* mode 'b': volume adjusted depending on layers (for layered bgm) */
-        /* mode 'e': volume adjusted equally for all layers (for generic downmixing) */
-        if (mode == 'b' && ch < max) {
+        /* MIX_MACRO_VOCALS: same volume for all layers (for layered vocals) */
+        /* MIX_MACRO_EQUAL: volume adjusted equally for all layers (for generic downmixing) */
+        /* MIX_MACRO_BGM: volume adjusted depending on layers (for layered bgm) */
+        if (mode == MIX_MACRO_BGM && ch < max) {
             /* reduce a bit main channels (see below) */
             int channel_mixes = selected_channels / max;
             if (current < selected_channels % (channel_mixes * max)) /* may be simplified? */
@@ -763,7 +983,7 @@ void mixing_macro_layer(VGMSTREAM* vgmstream, int max, uint32_t mask, char mode)
 
             volume = 1 / sqrt(channel_mixes);
         }
-        if ((mode == 'b' && ch >= max) || (mode == 'e')) {
+        if ((mode == MIX_MACRO_BGM && ch >= max) || (mode == MIX_MACRO_EQUAL)) {
             /* find how many will be mixed in current channel (earlier channels receive more
              * mixes than later ones, ex: selected 8ch + max 3ch: ch0=0+3+6, ch1=1+4+7, ch2=2+5) */
             int channel_mixes = selected_channels / max;
@@ -807,8 +1027,11 @@ void mixing_macro_crosstrack(VGMSTREAM* vgmstream, int max) {
 
     /* set loops to hear all track changes */
     track_num = output_channels / max;
-    if (vgmstream->config.loop_count < track_num)
+    if (vgmstream->config.loop_count < track_num) {
         vgmstream->config.loop_count = track_num;
+        vgmstream->config.loop_count_set = 1;
+        vgmstream->config.config_set = 1;
+    }
 
     ch = 0;
     for (track = 0; track < track_num; track++) {
@@ -868,16 +1091,19 @@ void mixing_macro_crosslayer(VGMSTREAM* vgmstream, int max, char mode) {
 
     /* set loops to hear all track changes */
     layer_num = output_channels / max;
-    if (vgmstream->config.loop_count < layer_num)
+    if (vgmstream->config.loop_count < layer_num) {
         vgmstream->config.loop_count = layer_num;
+        vgmstream->config.loop_count_set = 1;
+        vgmstream->config.config_set = 1;
+    }
 
-    /* mode 'v': constant volume
-     * mode 'e': sets fades to successively lower/equalize volume per loop for each layer
+    /* MIX_MACRO_VOCALS: constant volume
+     * MIX_MACRO_EQUAL: sets fades to successively lower/equalize volume per loop for each layer
      * (to keep final volume constant-ish), ex. 3 layers/loops, 2 max:
      * - layer0 (ch0+1): loop0 --[1.0]--, loop1 )=1.0..0.7, loop2 )=0.7..0.5, loop3 --[0.5/end]--
      * - layer1 (ch2+3): loop0 --[0.0]--, loop1 (=0.0..0.7, loop2 )=0.7..0.5, loop3 --[0.5/end]--
      * - layer2 (ch4+5): loop0 --[0.0]--, loop1 ---[0.0]--, loop2 (=0.0..0.5, loop3 --[0.5/end]--
-     * mode 'b': similar but 1st layer (main) has higher/delayed volume:
+     * MIX_MACRO_BGM: similar but 1st layer (main) has higher/delayed volume:
      * - layer0 (ch0+1): loop0 --[1.0]--, loop1 )=1.0..1.0, loop2 )=1.0..0.7, loop3 --[0.7/end]--
      */
     for (loop = 1; loop < layer_num; loop++) {
@@ -889,7 +1115,7 @@ void mixing_macro_crosslayer(VGMSTREAM* vgmstream, int max, char mode) {
         change_pos = loop_pre + loop_samples * loop;
         change_time = 10.0 * vgmstream->sample_rate; /* in secs */
 
-        if (mode == 'e') {
+        if (mode == MIX_MACRO_EQUAL) {
             volume1 = 1 / sqrt(loop + 0);
             volume2 = 1 / sqrt(loop + 1);
         }
@@ -898,7 +1124,7 @@ void mixing_macro_crosslayer(VGMSTREAM* vgmstream, int max, char mode) {
         for (layer = 0; layer < layer_num; layer++) {
             char type;
 
-            if (mode == 'b') {
+            if (mode == MIX_MACRO_BGM) {
                 if (layer == 0) {
                     volume1 = 1 / sqrt(loop - 1 <= 0 ? 1 : loop - 1);
                     volume2 = 1 / sqrt(loop + 0);
@@ -1062,12 +1288,6 @@ void mixing_setup(VGMSTREAM * vgmstream, int32_t max_sample_count) {
 
     if (!data) goto fail;
 
-    /* a bit wonky but eh... */
-    if (vgmstream->channel_layout && vgmstream->channels != data->output_channels) {
-        vgmstream->channel_layout = 0;
-        ((VGMSTREAM*)vgmstream->start_vgmstream)->channel_layout = 0;
-    }
-
     /* special value to not actually enable anything (used to query values) */
     if (max_sample_count <= 0)
         goto fail;
@@ -1079,6 +1299,12 @@ void mixing_setup(VGMSTREAM * vgmstream, int32_t max_sample_count) {
     data->mixbuf = mixbuf_re;
     data->mixing_on = 1;
 
+    /* a bit wonky but eh... */
+    if (vgmstream->channel_layout && vgmstream->channels != data->output_channels) {
+        vgmstream->channel_layout = 0;
+        ((VGMSTREAM*)vgmstream->start_vgmstream)->channel_layout = 0;
+    }
+
     /* since data exists on its own memory and pointer is already set
      * there is no need to propagate to start_vgmstream */
 
@@ -1089,7 +1315,7 @@ fail:
     return;
 }
 
-void mixing_info(VGMSTREAM * vgmstream, int *out_input_channels, int *out_output_channels) {
+void mixing_info(VGMSTREAM* vgmstream, int* p_input_channels, int* p_output_channels) {
     mixing_data *data = vgmstream->mixing_data;
     int input_channels, output_channels;
 
@@ -1101,11 +1327,13 @@ void mixing_info(VGMSTREAM * vgmstream, int *out_input_channels, int *out_output
     else
         input_channels = vgmstream->channels;
 
-    if (out_input_channels)  *out_input_channels = input_channels;
-    if (out_output_channels) *out_output_channels = output_channels;
+    if (p_input_channels)  *p_input_channels = input_channels;
+    if (p_output_channels) *p_output_channels = output_channels;
 
     //;VGM_LOG("MIX: channels %i, in=%i, out=%i, mix=%i\n", vgmstream->channels, input_channels, output_channels, data->mixing_channels);
     return;
 fail:
+    if (p_input_channels)  *p_input_channels = vgmstream->channels;
+    if (p_output_channels) *p_output_channels = vgmstream->channels;
     return;
 }

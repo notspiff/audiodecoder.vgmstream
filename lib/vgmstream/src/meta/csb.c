@@ -13,7 +13,7 @@ VGMSTREAM * init_vgmstream_csb(STREAMFILE *streamFile) {
     utf_context *utf_sdl = NULL;
     int total_subsongs, target_subsong = streamFile->stream_index;
     uint8_t fmt = 0;
-    const char *stream_name = NULL;
+    const char *stream_name;
 
 
     /* checks */

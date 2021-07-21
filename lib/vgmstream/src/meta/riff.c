@@ -317,7 +317,7 @@ VGMSTREAM* init_vgmstream_riff(STREAMFILE* sf) {
 
     int FormatChunkFound = 0, DataChunkFound = 0, JunkFound = 0;
 
-    int mwv = 0; /* Level-5 .mwv (Dragon Quest VIII, Rogue Galaxy) */
+    int mwv = 0;
     off_t mwv_pflt_offset = -1;
     off_t mwv_ctrl_offset = -1;
 
@@ -346,8 +346,10 @@ VGMSTREAM* init_vgmstream_riff(STREAMFILE* sf) {
      * .aud: EA Replay ATRAC3
      * .at9: standard ATRAC9
      * .saf: Whacked! (Xbox)
+     * .mwv: Level-5 games [Dragon Quest VIII (PS2), Rogue Galaxy (PS2)]
+     * .ima: Baja: Edge of Control (PS3/X360)
      */
-    if ( check_extensions(sf, "wav,lwav,xwav,da,dax,cd,med,snd,adx,adp,xss,xsew,adpcm,adw,wd,,sbv,wvx,str,at3,rws,aud,at9,saf") ) {
+    if ( check_extensions(sf, "wav,lwav,xwav,da,dax,cd,med,snd,adx,adp,xss,xsew,adpcm,adw,wd,,sbv,wvx,str,at3,rws,aud,at9,saf,ima") ) {
         ;
     }
     else if ( check_extensions(sf, "mwv") ) {
@@ -370,8 +372,8 @@ VGMSTREAM* init_vgmstream_riff(STREAMFILE* sf) {
     if (file_size != riff_size + 0x08) {
         uint16_t codec = read_16bitLE(0x14,sf);
 
-        if (riff_size + 0x08 + 0x01 == file_size)
-            riff_size += 0x01; /* [Shikkoku no Sharnoth (PC)] */
+        if      (codec == 0x6771 && riff_size + 0x08 + 0x01 == file_size)
+            riff_size += 0x01; /* [Shikkoku no Sharnoth (PC)] (Sony Sound Forge?) */
 
         else if (codec == 0x0069 && riff_size == file_size)
             riff_size -= 0x08; /* [Dynasty Warriors 3 (Xbox), BloodRayne (Xbox)] */
@@ -385,17 +387,35 @@ VGMSTREAM* init_vgmstream_riff(STREAMFILE* sf) {
         else if (codec == 0x0000 && riff_size == file_size)
             riff_size -= 0x08; /* [Rayman 2 (DC)] */
 
-        else if (codec == 0x0000 && riff_size + 0x02 + 0x08 == file_size)
+        else if (codec == 0x0000 && riff_size + 0x08 + 0x02 == file_size)
             riff_size -= 0x02; /* [Rayman 2 (DC)]-dcz */
 
         else if (codec == 0x0300 && riff_size == file_size)
             riff_size -= 0x08; /* [Chrono Ma:gia (Android)] */
+
+        else if (codec == 0xFFFE && riff_size + 0x08 + 0x18 == file_size)
+            riff_size += 0x18; /* [F1 2011 (Vita)] (adds a "pada" chunk but RIFF size wasn't updated) */
+
+        else if (mwv) {
+            int channels = read_16bitLE(0x16, sf); /* [Dragon Quest VIII (PS2), Rogue Galaxy (PS2)] */
+            size_t file_size_fixed = riff_size + 0x08 + 0x04 * (channels - 1);
+
+            if (file_size_fixed <= file_size && file_size - file_size_fixed < 0x10)
+            {
+                /* files inside HD6/DAT are also padded to 0x10 so need to fix file_size */
+                file_size = file_size_fixed;
+                riff_size = file_size - 0x08;
+            }
+        }
 
         else if (riff_size >= file_size && read_32bitBE(0x24,sf) == 0x4E584246) /* "NXBF" */
             riff_size = file_size - 0x08; /* [R:Racing Evolution (Xbox)] */
 
         else if (codec == 0x0011 && (riff_size / 2 / 2 == read_32bitLE(0x30,sf))) /* riff_size = pcm_size (always stereo, has fact at 0x30) */
             riff_size = file_size - 0x08; /* [Asphalt 6 (iOS)] (sfx/memory wavs have ok sizes?) */
+
+        else if (codec == 0xFFFE && riff_size + 0x08 + 0x30 == file_size)
+            riff_size += 0x30; /* [E.X. Troopers (PS3)] (adds "ver /eBIT/tIME/mrkr" empty chunks but RIFF size wasn't updated) */
     }
 
     /* check for truncated RIFF */
@@ -406,7 +426,7 @@ VGMSTREAM* init_vgmstream_riff(STREAMFILE* sf) {
     {
         off_t current_chunk = 0x0c; /* start with first chunk */
 
-        while (current_chunk < file_size && current_chunk < riff_size+8) {
+        while (current_chunk < file_size) {
             uint32_t chunk_id = read_32bitBE(current_chunk + 0x00,sf); /* FOURCC */
             size_t chunk_size = read_32bitLE(current_chunk + 0x04,sf);
 
